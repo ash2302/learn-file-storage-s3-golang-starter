@@ -1,12 +1,14 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
 	"io"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 )
 
 func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Request) {
@@ -45,11 +47,27 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	defer file.Close()
 
 	mediaType := fileHeader.Header.Get("Content-Type")
-	imgData, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Couldn't read file", err)
+	extensions, err := mime.ExtensionsByType(mediaType)
+	if err != nil || len(extensions) == 0 {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't find media type", err)
 		return
 	}
+
+	extension := extensions[0]
+	filePath := filepath.Join(cfg.assetsRoot, videoID.String()+extension)
+	fileOnDisk, err := os.Create(filePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create file on disk", err)
+		return
+	}
+	defer fileOnDisk.Close()
+
+	_, err = io.Copy(fileOnDisk, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't copy file contents", err)
+		return
+	}
+
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't get video", err)
@@ -60,10 +78,9 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusUnauthorized, "You are not authorized to upload this video", nil)
 		return
 	}
-	encodedImage := base64.StdEncoding.EncodeToString(imgData)
 
-	dataURL := fmt.Sprintf("data:%s;base64,%s", mediaType, encodedImage)
-	video.ThumbnailURL = &dataURL
+	url := fmt.Sprintf("http://localhost:%s/assets/%s%s", cfg.port, videoID, extension)
+	video.ThumbnailURL = &url
 
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
