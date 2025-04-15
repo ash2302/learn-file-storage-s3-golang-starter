@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -66,7 +68,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 
 	extension := extensions[0]
-	filePath := filepath.Join(cfg.assetsRoot, videoID.String()+extension)
+	byteSlice := make([]byte, 32)
+	rand.Read(byteSlice)
+	fileName := base64.RawURLEncoding.EncodeToString(byteSlice)
+
+	filePath := filepath.Join(cfg.assetsRoot, fileName+extension)
 	fileOnDisk, err := os.Create(filePath)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't create file on disk", err)
@@ -91,7 +97,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	url := fmt.Sprintf("http://localhost:%s/assets/%s%s", cfg.port, videoID, extension)
+	url := fmt.Sprintf("http://localhost:%s/assets/%s%s", cfg.port, fileName, extension)
 	video.ThumbnailURL = &url
 
 	err = cfg.db.UpdateVideo(video)
