@@ -90,7 +90,30 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	hexString := hex.EncodeToString(bytes)
-	key := hexString + ".mp4"
+	var orientation string
+
+	aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to get aspect ratio", err)
+		return
+	}
+
+	_, err = tempFile.Seek(0, io.SeekStart)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't seek temp file before upload", err)
+		return
+	}
+
+	switch aspectRatio {
+	case "16:9":
+		orientation = "landscape"
+	case "9:16":
+		orientation = "portrait"
+	default:
+		orientation = "other"
+	}
+
+	key := fmt.Sprintf("%s/%s.mp4", orientation, hexString)
 
 	input := &s3.PutObjectInput{
 		Bucket:      aws.String(cfg.s3Bucket),
