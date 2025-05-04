@@ -75,11 +75,20 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Couldn't copy file contents", err)
 		return
 	}
-	_, err = tempFile.Seek(0, io.SeekStart)
+
+	processedPath, err := processVideoForFastStart(tempFile.Name())
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't seek to the beginning of the file", err)
+		respondWithError(w, http.StatusInternalServerError, "Couldn't process video", err)
 		return
 	}
+
+	processedFile, err := os.Open(processedPath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't open file", err)
+		return
+	}
+	defer os.Remove(processedPath)
+	defer processedFile.Close()
 
 	bytes := make([]byte, 32)
 
@@ -92,15 +101,9 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	hexString := hex.EncodeToString(bytes)
 	var orientation string
 
-	aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+	aspectRatio, err := getVideoAspectRatio(processedPath)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to get aspect ratio", err)
-		return
-	}
-
-	_, err = tempFile.Seek(0, io.SeekStart)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't seek temp file before upload", err)
 		return
 	}
 
@@ -118,7 +121,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	input := &s3.PutObjectInput{
 		Bucket:      aws.String(cfg.s3Bucket),
 		Key:         aws.String(key),
-		Body:        tempFile,
+		Body:        processedFile,
 		ContentType: aws.String(mediaType),
 	}
 
